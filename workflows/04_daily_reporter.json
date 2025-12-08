@@ -1,0 +1,233 @@
+{
+  "name": "Daily Leakage Reporter",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-daily",
+      "name": "Schedule - Daily 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nyesterday.setHours(0, 0, 0, 0);\n\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nreturn {\n  start_date: yesterday.toISOString(),\n  end_date: today.toISOString(),\n  report_date: yesterday.toISOString().split('T')[0],\n  display_date: yesterday.toLocaleDateString('en-US', { \n    weekday: 'long', \n    year: 'numeric', \n    month: 'long', \n    day: 'numeric' \n  })\n};"
+      },
+      "id": "code-dates",
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "get",
+        "tableId": "transactions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "transaction_date",
+              "operator": "gte",
+              "value": "={{ $json.start_date }}"
+            },
+            {
+              "keyName": "transaction_date",
+              "operator": "lt",
+              "value": "={{ $json.end_date }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "supabase-get-transactions",
+      "name": "Get Yesterday's Transactions",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "get",
+        "tableId": "leakage_findings",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "detected_at",
+              "operator": "gte",
+              "value": "={{ $('Calculate Date Range').item.json.start_date }}"
+            },
+            {
+              "keyName": "detected_at",
+              "operator": "lt",
+              "value": "={{ $('Calculate Date Range').item.json.end_date }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "supabase-get-findings",
+      "name": "Get Yesterday's Findings",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const transactions = $('Get Yesterday\\'s Transactions').all().map(item => item.json);\nconst findings = $('Get Yesterday\\'s Findings').all().map(item => item.json);\nconst dateInfo = $('Calculate Date Range').item.json;\n\n// Calculate summary metrics\nconst totalTransactions = transactions.length;\nconst transactionsWithLeakage = transactions.filter(t => t.has_leakage).length;\nconst totalLeakage = transactions.reduce((sum, t) => sum + (parseFloat(t.leakage_amount) || 0), 0);\n\n// Group by leakage type\nconst leakageByType = findings.reduce((acc, f) => {\n  const type = f.leakage_type || 'unknown';\n  if (!acc[type]) {\n    acc[type] = { count: 0, amount: 0 };\n  }\n  acc[type].count++;\n  acc[type].amount += parseFloat(f.leakage_amount) || 0;\n  return acc;\n}, {});\n\n// Count by severity\nconst criticalFindings = findings.filter(f => f.severity === 'critical').length;\nconst highFindings = findings.filter(f => f.severity === 'high').length;\nconst mediumFindings = findings.filter(f => f.severity === 'medium').length;\nconst lowFindings = findings.filter(f => f.severity === 'low').length;\n\n// Top sellers with leakage\nconst sellerLeakage = transactions\n  .filter(t => t.has_leakage)\n  .reduce((acc, t) => {\n    const seller = t.seller_id;\n    if (!acc[seller]) {\n      acc[seller] = { count: 0, amount: 0 };\n    }\n    acc[seller].count++;\n    acc[seller].amount += parseFloat(t.leakage_amount) || 0;\n    return acc;\n  }, {});\n\nconst topSellers = Object.entries(sellerLeakage)\n  .sort((a, b) => b[1].amount - a[1].amount)\n  .slice(0, 5)\n  .map(([id, data]) => ({ seller_id: id, ...data }));\n\nreturn {\n  report_date: dateInfo.report_date,\n  display_date: dateInfo.display_date,\n  total_transactions: totalTransactions,\n  transactions_with_leakage: transactionsWithLeakage,\n  leakage_percentage: totalTransactions > 0 ? ((transactionsWithLeakage / totalTransactions) * 100).toFixed(1) : 0,\n  total_leakage_amount: totalLeakage.toFixed(2),\n  leakage_by_type: leakageByType,\n  critical_findings: criticalFindings,\n  high_findings: highFindings,\n  medium_findings: mediumFindings,\n  low_findings: lowFindings,\n  total_findings: findings.length,\n  top_sellers: topSellers\n};"
+      },
+      "id": "code-aggregate",
+      "name": "Aggregate Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "insert",
+        "tableId": "daily_leakage_summary",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "summary_date": "={{ $json.report_date }}",
+            "total_transactions": "={{ $json.total_transactions }}",
+            "transactions_with_leakage": "={{ $json.transactions_with_leakage }}",
+            "total_leakage_amount": "={{ $json.total_leakage_amount }}",
+            "leakage_by_type": "={{ JSON.stringify($json.leakage_by_type) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "supabase-insert-summary",
+      "name": "Save Summary",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"📊 Daily Leakage Report - {{ $json.display_date }}\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"💰 Daily Marketplace Leakage Report\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*{{ $json.display_date }}*\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Total Leakage:*\\n${{ $json.total_leakage_amount }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Transactions:*\\n{{ $json.transactions_with_leakage }} / {{ $json.total_transactions }} ({{ $json.leakage_percentage }}%)\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Total Findings:*\\n{{ $json.total_findings }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*By Severity:*\\n🔴 {{ $json.critical_findings }} | 🟡 {{ $json.high_findings }} | 🟢 {{ $json.medium_findings }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"divider\"\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Leakage by Type:*\\n{{ Object.entries($json.leakage_by_type).map(([type, data]) => `• ${type}: $${data.amount.toFixed(2)} (${data.count} cases)`).join('\\\\n') }}\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": {\n            \"type\": \"plain_text\",\n            \"text\": \"View Dashboard\"\n          },\n          \"url\": \"https://your-dashboard.com/reports/{{ $json.report_date }}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "http-slack-report",
+      "name": "Send Slack Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Schedule - Daily 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Range": {
+      "main": [
+        [
+          {
+            "node": "Get Yesterday's Transactions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Yesterday's Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Yesterday's Transactions": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Yesterday's Findings": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Save Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,102 @@
+name: Auto Label Issues
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Label Bug Reports
+        if: contains(github.event.issue.title, '[BUG]')
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['bug', 'needs-triage']
+            })
+      
+      - name: Label Feature Requests
+        if: contains(github.event.issue.title, '[FEATURE]')
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['enhancement', 'needs-review']
+            })
+      
+      - name: Label Workflow-Specific Issues
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const title = context.payload.issue.title || '';
+            const content = body + title;
+            
+            let labels = [];
+            
+            if (content.includes('Workflow 1') || content.includes('Transaction Monitor')) {
+              labels.push('workflow-1');
+            }
+            if (content.includes('Workflow 2') || content.includes('Transaction Validator')) {
+              labels.push('workflow-2');
+            }
+            if (content.includes('Workflow 3') || content.includes('Discount Validator')) {
+              labels.push('workflow-3');
+            }
+            if (content.includes('Workflow 4') || content.includes('Daily Reporter')) {
+              labels.push('workflow-4');
+            }
+            if (content.includes('Workflow 5') || content.includes('Recovery Manager')) {
+              labels.push('workflow-5');
+            }
+            if (content.includes('Supabase') || content.includes('database')) {
+              labels.push('database');
+            }
+            if (content.includes('n8n')) {
+              labels.push('n8n');
+            }
+            if (content.includes('documentation')) {
+              labels.push('documentation');
+            }
+            
+            if (labels.length > 0) {
+              github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labels
+              });
+            }
+      
+      - name: Welcome First-Time Contributors
+        uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            👋 Thanks for opening your first issue! 
+            
+            I'll review this shortly. In the meantime:
+            - Check the [documentation](https://github.com/${{ github.repository }}/tree/main/docs)
+            - Join the [discussion board](https://github.com/${{ github.repository }}/discussions)
+            - Star ⭐ the repo if you find it helpful!
+            
+          pr-message: |
+            🎉 Thanks for your first pull request!
+            
+            Please ensure:
+            - [ ] Code follows the [contribution guidelines](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md)
+            - [ ] Tests pass (if applicable)
+            - [ ] Documentation is updated
+            
+            I'll review this soon!

@@ -1,0 +1,242 @@
+{
+  "description": "Sample transaction payloads for testing the Marketplace Leak Detector webhooks",
+  "webhook_url": "https://your-n8n-instance.app/webhook/marketplace/transaction",
+  "test_cases": [
+    {
+      "name": "Clean Transaction (No Leakage)",
+      "description": "Perfect transaction with correct commission and pricing",
+      "expected_result": "No leakage detected, transaction saved successfully",
+      "payload": {
+        "id": "txn_clean_001",
+        "seller_id": "seller_12345",
+        "buyer_id": "buyer_67890",
+        "category": "photography",
+        "product_type": "service",
+        "amount": 100.00,
+        "commission": 15.00,
+        "commission_rate": 15.0,
+        "net_to_seller": 85.00,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Missing Commission (Critical)",
+      "description": "Transaction with zero commission charged",
+      "expected_result": "Critical severity finding: missing_commission, $15.00 leakage",
+      "payload": {
+        "id": "txn_missing_001",
+        "seller_id": "seller_12346",
+        "buyer_id": "buyer_67891",
+        "category": "photography",
+        "product_type": "service",
+        "amount": 100.00,
+        "commission": 0.00,
+        "commission_rate": 0.0,
+        "net_to_seller": 100.00,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Wrong Commission Rate (High)",
+      "description": "Commission rate applied incorrectly (10% instead of 15%)",
+      "expected_result": "High severity finding: wrong_rate, $5.00 leakage",
+      "payload": {
+        "id": "txn_wrong_rate_001",
+        "seller_id": "seller_12347",
+        "buyer_id": "buyer_67892",
+        "category": "photography",
+        "product_type": "service",
+        "amount": 100.00,
+        "commission": 10.00,
+        "commission_rate": 10.0,
+        "net_to_seller": 90.00,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Underpriced Transaction (Medium)",
+      "description": "Transaction below minimum price for category",
+      "expected_result": "Medium severity finding: underpriced",
+      "payload": {
+        "id": "txn_underpriced_001",
+        "seller_id": "seller_12348",
+        "buyer_id": "buyer_67893",
+        "category": "photography",
+        "product_type": "service",
+        "amount": 30.00,
+        "commission": 4.50,
+        "commission_rate": 15.0,
+        "net_to_seller": 25.50,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Free Trial Not Converted (Medium)",
+      "description": "Free trial completed but no payment collected",
+      "expected_result": "Medium severity finding: free_trial_unpaid",
+      "payload": {
+        "id": "txn_trial_001",
+        "seller_id": "seller_12349",
+        "buyer_id": "buyer_67894",
+        "category": "consulting",
+        "product_type": "service",
+        "amount": 0.00,
+        "commission": 0.00,
+        "commission_rate": 0.0,
+        "net_to_seller": 0.00,
+        "discount_code": null,
+        "is_free_trial": true
+      }
+    },
+    {
+      "name": "Incorrect Calculation (High)",
+      "description": "Commission amount doesn't match stated rate",
+      "expected_result": "High severity finding: wrong_rate, $3.00 leakage",
+      "payload": {
+        "id": "txn_calc_error_001",
+        "seller_id": "seller_12350",
+        "buyer_id": "buyer_67895",
+        "category": "photography",
+        "product_type": "service",
+        "amount": 100.00,
+        "commission": 12.00,
+        "commission_rate": 15.0,
+        "net_to_seller": 88.00,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Valid Discount Applied",
+      "description": "Transaction with legitimate discount (SAVE10)",
+      "expected_result": "No leakage detected, discount properly applied",
+      "payload": {
+        "id": "txn_discount_valid_001",
+        "seller_id": "seller_12351",
+        "buyer_id": "buyer_67896",
+        "category": "photography",
+        "product_type": "service",
+        "amount": 100.00,
+        "commission": 13.50,
+        "commission_rate": 15.0,
+        "net_to_seller": 76.50,
+        "discount_code": "SAVE10",
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "High-Value Transaction (Clean)",
+      "description": "Large transaction with correct commission",
+      "expected_result": "No leakage detected",
+      "payload": {
+        "id": "txn_high_value_001",
+        "seller_id": "seller_12352",
+        "buyer_id": "buyer_67897",
+        "category": "video",
+        "product_type": "service",
+        "amount": 5000.00,
+        "commission": 750.00,
+        "commission_rate": 15.0,
+        "net_to_seller": 4250.00,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Digital Product Transaction",
+      "description": "Digital product with different commission rate",
+      "expected_result": "No leakage detected (20% rate for digital products)",
+      "payload": {
+        "id": "txn_digital_001",
+        "seller_id": "seller_12353",
+        "buyer_id": "buyer_67898",
+        "category": "photography",
+        "product_type": "digital_product",
+        "amount": 100.00,
+        "commission": 20.00,
+        "commission_rate": 20.0,
+        "net_to_seller": 80.00,
+        "discount_code": null,
+        "is_free_trial": false
+      }
+    },
+    {
+      "name": "Batch Test - Multiple Transactions",
+      "description": "Array of transactions for bulk testing",
+      "expected_result": "Mix of clean and leakage transactions",
+      "payload": [
+        {
+          "id": "txn_batch_001",
+          "seller_id": "seller_batch",
+          "buyer_id": "buyer_batch_1",
+          "category": "photography",
+          "product_type": "service",
+          "amount": 150.00,
+          "commission": 22.50,
+          "commission_rate": 15.0,
+          "net_to_seller": 127.50,
+          "discount_code": null,
+          "is_free_trial": false
+        },
+        {
+          "id": "txn_batch_002",
+          "seller_id": "seller_batch",
+          "buyer_id": "buyer_batch_2",
+          "category": "photography",
+          "product_type": "service",
+          "amount": 200.00,
+          "commission": 0.00,
+          "commission_rate": 0.0,
+          "net_to_seller": 200.00,
+          "discount_code": null,
+          "is_free_trial": false
+        }
+      ]
+    }
+  ],
+  "curl_examples": {
+    "basic_test": "curl -X POST 'https://your-n8n.app/webhook/marketplace/transaction' -H 'Content-Type: application/json' -d @examples/test_transactions.json",
+    "single_transaction": "curl -X POST 'https://your-n8n.app/webhook/marketplace/transaction' -H 'Content-Type: application/json' -d '{\"id\":\"test_001\",\"seller_id\":\"seller_123\",\"buyer_id\":\"buyer_456\",\"category\":\"photography\",\"product_type\":\"service\",\"amount\":100.00,\"commission\":15.00,\"commission_rate\":15.0,\"net_to_seller\":85.00,\"discount_code\":null,\"is_free_trial\":false}'",
+    "with_auth_header": "curl -X POST 'https://your-n8n.app/webhook/marketplace/transaction' -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_SECRET_TOKEN' -d @examples/test_transactions.json"
+  },
+  "discount_validation_payloads": {
+    "description": "Test payloads for Workflow 3 (Discount Validator)",
+    "webhook_url": "https://your-n8n-instance.app/webhook/validate-discount",
+    "test_cases": [
+      {
+        "name": "Valid Discount",
+        "payload": {
+          "transaction_id": "txn_discount_test_001",
+          "discount_code": "SAVE10",
+          "gross_amount": 100.00,
+          "commission_amount": 13.50,
+          "net_to_seller": 76.50
+        }
+      },
+      {
+        "name": "Expired Discount",
+        "payload": {
+          "transaction_id": "txn_discount_test_002",
+          "discount_code": "EXPIRED",
+          "gross_amount": 100.00,
+          "commission_amount": 13.50,
+          "net_to_seller": 71.50
+        }
+      },
+      {
+        "name": "Below Minimum Purchase",
+        "payload": {
+          "transaction_id": "txn_discount_test_003",
+          "discount_code": "SAVE10",
+          "gross_amount": 30.00,
+          "commission_amount": 3.82,
+          "net_to_seller": 23.18
+        }
+      }
+    ]
+  }
+}

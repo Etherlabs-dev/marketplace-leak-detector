@@ -1,0 +1,218 @@
+{
+  "name": "Discount Validator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "validate-discount",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-discount",
+      "name": "Webhook - Validate Discount",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "validate-discount"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "get",
+        "tableId": "discount_rules",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "code",
+              "operator": "eq",
+              "value": "={{ $json.body.discount_code }}"
+            },
+            {
+              "keyName": "active",
+              "operator": "eq",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "supabase-get-discount",
+      "name": "Get Discount Rule",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const transaction = $input.item.json.body;\nconst discountResult = $('Get Discount Rule').all();\nconst discount = discountResult.length > 0 ? discountResult[0].json : null;\n\nconst issues = [];\n\n// Check if discount exists\nif (!discount) {\n  issues.push({\n    type: 'invalid_code',\n    severity: 'high',\n    description: `Discount code '${transaction.discount_code}' does not exist or is inactive`,\n    leakage_amount: 0\n  });\n} else {\n  // Check validity dates\n  const now = new Date();\n  const validFrom = new Date(discount.valid_from);\n  const validUntil = new Date(discount.valid_until);\n  \n  if (now < validFrom || now > validUntil) {\n    issues.push({\n      type: 'expired_code',\n      severity: 'high',\n      description: `Discount code used outside valid date range (${validFrom.toDateString()} - ${validUntil.toDateString()})`,\n      leakage_amount: 0\n    });\n  }\n  \n  // Check max uses\n  if (discount.current_uses >= discount.max_uses) {\n    issues.push({\n      type: 'exceeded_uses',\n      severity: 'medium',\n      description: `Discount code exceeded maximum uses (${discount.max_uses})`,\n      leakage_amount: 0\n    });\n  }\n  \n  // Check minimum purchase\n  if (transaction.gross_amount < discount.minimum_purchase_amount) {\n    issues.push({\n      type: 'below_minimum',\n      severity: 'medium',\n      description: `Transaction amount $${transaction.gross_amount} below minimum $${discount.minimum_purchase_amount}`,\n      leakage_amount: 0\n    });\n  }\n  \n  // Calculate correct discount\n  let correctDiscount;\n  if (discount.discount_type === 'percentage') {\n    correctDiscount = transaction.gross_amount * (discount.discount_value / 100);\n  } else {\n    correctDiscount = discount.discount_value;\n  }\n  \n  // Calculate actual discount applied (reverse engineer from transaction)\n  const actualDiscount = transaction.gross_amount - transaction.net_to_seller - transaction.commission_amount;\n  \n  // Check if discount amount is correct (allow 1 cent rounding)\n  const discountDifference = Math.abs(correctDiscount - actualDiscount);\n  if (discountDifference > 0.01) {\n    const leakageAmount = actualDiscount > correctDiscount ? actualDiscount - correctDiscount : 0;\n    issues.push({\n      type: 'incorrect_discount_amount',\n      severity: leakageAmount > 10 ? 'high' : 'medium',\n      description: `Expected discount: $${correctDiscount.toFixed(2)}, Actual: $${actualDiscount.toFixed(2)}`,\n      leakage_amount: leakageAmount\n    });\n  }\n}\n\nconst totalLeakage = issues.reduce((sum, issue) => sum + (issue.leakage_amount || 0), 0);\n\nreturn {\n  transaction_id: transaction.transaction_id,\n  discount_code: transaction.discount_code,\n  has_discount_issues: issues.length > 0,\n  issues: issues,\n  total_discount_leakage: totalLeakage,\n  transaction_amount: transaction.gross_amount\n};"
+      },
+      "id": "code-validate-discount",
+      "name": "Validate Discount Application",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_discount_issues }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-issues",
+      "name": "Issues Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "issue-id",
+              "name": "issue",
+              "value": "={{ $json.issues }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "split-issues",
+      "name": "Split Issues",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "issue",
+        "options": {}
+      },
+      "id": "item-lists",
+      "name": "Split Out Items",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "insert",
+        "tableId": "leakage_findings",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "transaction_id": "={{ $('Validate Discount Application').item.json.transaction_id }}",
+            "leakage_type": "={{ $json.issue.type }}",
+            "severity": "={{ $json.issue.severity }}",
+            "expected_amount": "0",
+            "actual_amount": "0",
+            "leakage_amount": "={{ $json.issue.leakage_amount }}",
+            "description": "={{ $json.issue.description }}",
+            "evidence": "={{ JSON.stringify({ discount_code: $('Validate Discount Application').item.json.discount_code, issue: $json.issue }) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "supabase-create-discount-finding",
+      "name": "Create Finding",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Validate Discount": {
+      "main": [
+        [
+          {
+            "node": "Get Discount Rule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Discount Rule": {
+      "main": [
+        [
+          {
+            "node": "Validate Discount Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Discount Application": {
+      "main": [
+        [
+          {
+            "node": "Issues Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Issues Found?": {
+      "main": [
+        [
+          {
+            "node": "Split Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Issues": {
+      "main": [
+        [
+          {
+            "node": "Split Out Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Items": {
+      "main": [
+        [
+          {
+            "node": "Create Finding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

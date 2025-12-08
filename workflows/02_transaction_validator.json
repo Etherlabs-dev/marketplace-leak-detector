@@ -1,0 +1,295 @@
+{
+  "name": "Transaction Validator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "validate-transaction",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-validate",
+      "name": "Webhook - Validate Transaction",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "validate-transaction"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "get",
+        "tableId": "transactions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "operator": "eq",
+              "value": "={{ $json.body.transaction_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "supabase-get-transaction",
+      "name": "Get Transaction",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "get",
+        "tableId": "pricing_rules",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "category",
+              "operator": "eq",
+              "value": "={{ $json[0].category }}"
+            },
+            {
+              "keyName": "active",
+              "operator": "eq",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "supabase-get-rules",
+      "name": "Get Pricing Rules",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get transaction and rules from previous nodes\nconst transaction = $('Get Transaction').all()[0].json;\nconst rules = $('Get Pricing Rules').all()[0].json;\n\n// Calculate expected commission\nconst expectedRate = rules.base_take_rate;\nconst expectedCommission = transaction.gross_amount * (expectedRate / 100);\n\n// Get actual values\nconst actualCommission = transaction.commission_amount;\nconst actualRate = transaction.commission_rate;\n\n// Calculate leakage\nconst leakageAmount = expectedCommission - actualCommission;\nconst hasLeakage = leakageAmount > 0.01; // Allow 1 cent rounding\n\n// Determine leakage type and severity\nlet leakageType = null;\nlet severity = 'low';\nlet description = '';\n\nif (hasLeakage) {\n  if (actualCommission === 0) {\n    leakageType = 'missing_commission';\n    severity = 'critical';\n    description = `No commission collected on $${transaction.gross_amount} transaction. Expected $${expectedCommission.toFixed(2)}`;\n  } else if (actualRate < expectedRate) {\n    leakageType = 'wrong_rate';\n    severity = leakageAmount > 50 ? 'high' : 'medium';\n    description = `Wrong commission rate applied. Used ${actualRate}% instead of ${expectedRate}%. Loss: $${leakageAmount.toFixed(2)}`;\n  } else if (transaction.gross_amount < rules.minimum_price) {\n    leakageType = 'underpriced';\n    severity = 'medium';\n    description = `Transaction amount $${transaction.gross_amount} is below category minimum of $${rules.minimum_price}`;\n  }\n}\n\n// Build evidence object\nconst evidence = {\n  transaction: {\n    id: transaction.id,\n    seller_id: transaction.seller_id,\n    category: transaction.category,\n    gross_amount: transaction.gross_amount,\n    actual_commission: actualCommission,\n    actual_rate: actualRate\n  },\n  rules: {\n    category: rules.category,\n    expected_rate: expectedRate,\n    minimum_price: rules.minimum_price,\n    maximum_price: rules.maximum_price\n  },\n  calculation: {\n    expected: `${transaction.gross_amount} × ${expectedRate}% = $${expectedCommission.toFixed(2)}`,\n    actual: `${transaction.gross_amount} × ${actualRate}% = $${actualCommission.toFixed(2)}`,\n    difference: `$${leakageAmount.toFixed(2)}`\n  }\n};\n\n// Return result\nreturn {\n  transaction_id: transaction.id,\n  has_leakage: hasLeakage,\n  leakage_amount: leakageAmount,\n  leakage_type: leakageType,\n  severity: severity,\n  description: description,\n  expected_commission: expectedCommission,\n  expected_rate: expectedRate,\n  actual_commission: actualCommission,\n  actual_rate: actualRate,\n  evidence: evidence\n};"
+      },
+      "id": "code-calculate",
+      "name": "Calculate & Detect Leakage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_leakage }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-leakage",
+      "name": "Leakage Detected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "insert",
+        "tableId": "leakage_findings",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "transaction_id": "={{ $json.transaction_id }}",
+            "leakage_type": "={{ $json.leakage_type }}",
+            "severity": "={{ $json.severity }}",
+            "expected_amount": "={{ $json.expected_commission }}",
+            "actual_amount": "={{ $json.actual_commission }}",
+            "leakage_amount": "={{ $json.leakage_amount }}",
+            "description": "={{ $json.description }}",
+            "evidence": "={{ JSON.stringify($json.evidence) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "supabase-create-finding",
+      "name": "Create Leakage Finding",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "update",
+        "tableId": "transactions",
+        "updateKey": "id",
+        "updateValue": "={{ $json.transaction_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "has_leakage": "={{ $json.has_leakage }}",
+            "leakage_amount": "={{ $json.leakage_amount }}",
+            "expected_commission": "={{ $json.expected_commission }}",
+            "expected_rate": "={{ $json.expected_rate }}",
+            "validated_at": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "supabase-update-transaction",
+      "name": "Update Transaction",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 500],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.severity }}",
+              "operation": "regex",
+              "value2": "high|critical"
+            }
+          ]
+        }
+      },
+      "id": "if-high-severity",
+      "name": "High Severity?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"🚨 High-Value Leakage Detected!\",\n  \"blocks\": [\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*{{ $json.severity === 'critical' ? '🔴 CRITICAL' : '🟡 HIGH' }} Leakage Alert*\\n\\n*Amount:* ${{ $json.leakage_amount.toFixed(2) }}\\n*Type:* {{ $json.leakage_type }}\\n*Transaction:* {{ $json.transaction_id }}\\n\\n{{ $json.description }}\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": {\n            \"type\": \"plain_text\",\n            \"text\": \"View Details\"\n          },\n          \"url\": \"https://your-dashboard.com/findings/{{ $json.transaction_id }}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "http-slack-alert",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1650, 200]
+    }
+  ],
+  "connections": {
+    "Webhook - Validate Transaction": {
+      "main": [
+        [
+          {
+            "node": "Get Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Transaction": {
+      "main": [
+        [
+          {
+            "node": "Get Pricing Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pricing Rules": {
+      "main": [
+        [
+          {
+            "node": "Calculate & Detect Leakage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate & Detect Leakage": {
+      "main": [
+        [
+          {
+            "node": "Leakage Detected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leakage Detected?": {
+      "main": [
+        [
+          {
+            "node": "Create Leakage Finding",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Leakage Finding": {
+      "main": [
+        [
+          {
+            "node": "High Severity?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Severity?": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

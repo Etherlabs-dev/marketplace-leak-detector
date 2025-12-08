@@ -1,0 +1,171 @@
+{
+  "name": "Recovery Queue Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */4 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-4hours",
+      "name": "Schedule - Every 4 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "get",
+        "tableId": "leakage_findings",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "status",
+              "operator": "eq",
+              "value": "detected"
+            }
+          ]
+        },
+        "sort": {
+          "values": [
+            {
+              "key": "leakage_amount",
+              "order": "desc"
+            },
+            {
+              "key": "detected_at",
+              "order": "asc"
+            }
+          ]
+        },
+        "options": {
+          "limit": 20
+        }
+      },
+      "id": "supabase-get-detected",
+      "name": "Get Detected Findings",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const findings = $input.all().map(item => item.json);\nconst teamMembers = [\n  { email: 'alice@company.com', name: 'Alice' },\n  { email: 'bob@company.com', name: 'Bob' },\n  { email: 'carol@company.com', name: 'Carol' }\n];\n\nreturn findings.map((finding, index) => {\n  const assignee = teamMembers[index % teamMembers.length];\n  \n  return {\n    json: {\n      finding_id: finding.id,\n      transaction_id: finding.transaction_id,\n      leakage_type: finding.leakage_type,\n      severity: finding.severity,\n      leakage_amount: finding.leakage_amount,\n      description: finding.description,\n      evidence: finding.evidence,\n      assigned_to: assignee.email,\n      assigned_to_name: assignee.name,\n      priority_score: (parseFloat(finding.leakage_amount) * \n                      (finding.severity === 'critical' ? 10 : \n                       finding.severity === 'high' ? 5 : \n                       finding.severity === 'medium' ? 2 : 1))\n    }\n  };\n});"
+      },
+      "id": "code-assign",
+      "name": "Assign Findings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "update",
+        "tableId": "leakage_findings",
+        "updateKey": "id",
+        "updateValue": "={{ $json.finding_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "investigating",
+            "assigned_to": "={{ $json.assigned_to }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "supabase-update-status",
+      "name": "Update Finding Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "leakage-detector@yourcompany.com",
+        "toEmail": "={{ $json.assigned_to }}",
+        "subject": "=🎯 New Recovery Task: ${{ $json.leakage_amount }} - {{ $json.leakage_type }}",
+        "emailType": "html",
+        "message": "=<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <h2 style=\"color: #2563eb;\">New Leakage Recovery Task</h2>\n  \n  <div style=\"background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;\">\n    <h3 style=\"margin-top: 0;\">Task Details</h3>\n    <p><strong>Amount:</strong> ${{ $json.leakage_amount }}</p>\n    <p><strong>Type:</strong> {{ $json.leakage_type }}</p>\n    <p><strong>Severity:</strong> <span style=\"color: {{ $json.severity === 'critical' ? '#dc2626' : $json.severity === 'high' ? '#ea580c' : '#65a30d' }};\">{{ $json.severity.toUpperCase() }}</span></p>\n    <p><strong>Transaction ID:</strong> {{ $json.transaction_id }}</p>\n  </div>\n  \n  <div style=\"margin: 20px 0;\">\n    <h3>Description</h3>\n    <p>{{ $json.description }}</p>\n  </div>\n  \n  <div style=\"margin: 20px 0;\">\n    <h3>Evidence</h3>\n    <pre style=\"background: #1f2937; color: #f9fafb; padding: 15px; border-radius: 4px; overflow-x: auto;\">{{ JSON.stringify(JSON.parse($json.evidence), null, 2) }}</pre>\n  </div>\n  \n  <div style=\"margin: 30px 0;\">\n    <a href=\"https://your-dashboard.com/findings/{{ $json.finding_id }}\" \n       style=\"background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;\">\n      View Full Details & Start Recovery\n    </a>\n  </div>\n  \n  <div style=\"margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;\">\n    <p>This task was automatically assigned based on your current workload. If you need to reassign, please update the finding status in the dashboard.</p>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "email-notify",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Schedule - Every 4 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get Detected Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Detected Findings": {
+      "main": [
+        [
+          {
+            "node": "Assign Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Findings": {
+      "main": [
+        [
+          {
+            "node": "Update Finding Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Finding Status": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

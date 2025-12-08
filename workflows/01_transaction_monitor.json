@@ -1,0 +1,184 @@
+{
+  "name": "Marketplace Transaction Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "marketplace/transaction",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-transaction",
+      "name": "Webhook - New Transaction",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "marketplace-transaction"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "transaction_id",
+              "value": "={{ $json.body.id }}"
+            },
+            {
+              "name": "seller_id",
+              "value": "={{ $json.body.seller_id }}"
+            },
+            {
+              "name": "buyer_id",
+              "value": "={{ $json.body.buyer_id }}"
+            },
+            {
+              "name": "category",
+              "value": "={{ $json.body.category }}"
+            },
+            {
+              "name": "product_type",
+              "value": "={{ $json.body.product_type }}"
+            },
+            {
+              "name": "discount_code",
+              "value": "={{ $json.body.discount_code || null }}"
+            }
+          ],
+          "number": [
+            {
+              "name": "gross_amount",
+              "value": "={{ $json.body.amount }}"
+            },
+            {
+              "name": "commission_amount",
+              "value": "={{ $json.body.commission }}"
+            },
+            {
+              "name": "commission_rate",
+              "value": "={{ $json.body.commission_rate }}"
+            },
+            {
+              "name": "net_to_seller",
+              "value": "={{ $json.body.net_to_seller }}"
+            }
+          ],
+          "boolean": [
+            {
+              "name": "is_free_trial",
+              "value": "={{ $json.body.is_free_trial || false }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-transaction-data",
+      "name": "Extract Transaction Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "operation": "insert",
+        "tableId": "transactions",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "transaction_id": "={{ $json.transaction_id }}",
+            "seller_id": "={{ $json.seller_id }}",
+            "buyer_id": "={{ $json.buyer_id }}",
+            "category": "={{ $json.category }}",
+            "product_type": "={{ $json.product_type }}",
+            "gross_amount": "={{ $json.gross_amount }}",
+            "commission_amount": "={{ $json.commission_amount }}",
+            "commission_rate": "={{ $json.commission_rate }}",
+            "net_to_seller": "={{ $json.net_to_seller }}",
+            "discount_code": "={{ $json.discount_code }}",
+            "is_free_trial": "={{ $json.is_free_trial }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "supabase-insert",
+      "name": "Supabase - Insert Transaction",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/webhook/validate-transaction",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "transaction_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "transaction_data",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-trigger-validation",
+      "name": "Trigger Validation Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - New Transaction": {
+      "main": [
+        [
+          {
+            "node": "Extract Transaction Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transaction Data": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Insert Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Insert Transaction": {
+      "main": [
+        [
+          {
+            "node": "Trigger Validation Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,388 @@
+{
+  "info": {
+    "name": "Marketplace Leak Detector API",
+    "description": "Complete API testing collection for n8n webhooks and Supabase queries",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "n8n_base_url",
+      "value": "https://your-n8n-instance.app",
+      "type": "string"
+    },
+    {
+      "key": "supabase_url",
+      "value": "https://your-project.supabase.co",
+      "type": "string"
+    },
+    {
+      "key": "supabase_key",
+      "value": "your_service_role_key",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Workflow 1: Transaction Monitor",
+      "item": [
+        {
+          "name": "Send Clean Transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{$randomUUID}}\",\n  \"seller_id\": \"seller_{{$randomInt}}\",\n  \"buyer_id\": \"buyer_{{$randomInt}}\",\n  \"category\": \"photography\",\n  \"product_type\": \"service\",\n  \"amount\": 100.00,\n  \"commission\": 15.00,\n  \"commission_rate\": 15.0,\n  \"net_to_seller\": 85.00,\n  \"discount_code\": null,\n  \"is_free_trial\": false\n}"
+            },
+            "url": {
+              "raw": "{{n8n_base_url}}/webhook/marketplace/transaction",
+              "host": ["{{n8n_base_url}}"],
+              "path": ["webhook", "marketplace", "transaction"]
+            }
+          }
+        },
+        {
+          "name": "Send Transaction with Missing Commission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{$randomUUID}}\",\n  \"seller_id\": \"seller_{{$randomInt}}\",\n  \"buyer_id\": \"buyer_{{$randomInt}}\",\n  \"category\": \"photography\",\n  \"product_type\": \"service\",\n  \"amount\": 100.00,\n  \"commission\": 0.00,\n  \"commission_rate\": 0.0,\n  \"net_to_seller\": 100.00,\n  \"discount_code\": null,\n  \"is_free_trial\": false\n}"
+            },
+            "url": {
+              "raw": "{{n8n_base_url}}/webhook/marketplace/transaction",
+              "host": ["{{n8n_base_url}}"],
+              "path": ["webhook", "marketplace", "transaction"]
+            }
+          }
+        },
+        {
+          "name": "Send Batch Transactions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"id\": \"batch_001\",\n    \"seller_id\": \"seller_batch\",\n    \"buyer_id\": \"buyer_001\",\n    \"category\": \"photography\",\n    \"product_type\": \"service\",\n    \"amount\": 100.00,\n    \"commission\": 15.00,\n    \"commission_rate\": 15.0,\n    \"net_to_seller\": 85.00,\n    \"discount_code\": null,\n    \"is_free_trial\": false\n  },\n  {\n    \"id\": \"batch_002\",\n    \"seller_id\": \"seller_batch\",\n    \"buyer_id\": \"buyer_002\",\n    \"category\": \"photography\",\n    \"product_type\": \"service\",\n    \"amount\": 200.00,\n    \"commission\": 0.00,\n    \"commission_rate\": 0.0,\n    \"net_to_seller\": 200.00,\n    \"discount_code\": null,\n    \"is_free_trial\": false\n  }\n]"
+            },
+            "url": {
+              "raw": "{{n8n_base_url}}/webhook/marketplace/transaction",
+              "host": ["{{n8n_base_url}}"],
+              "path": ["webhook", "marketplace", "transaction"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Workflow 3: Discount Validator",
+      "item": [
+        {
+          "name": "Validate Valid Discount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_id\": \"{{$randomUUID}}\",\n  \"discount_code\": \"SAVE10\",\n  \"gross_amount\": 100.00,\n  \"commission_amount\": 13.50,\n  \"net_to_seller\": 76.50\n}"
+            },
+            "url": {
+              "raw": "{{n8n_base_url}}/webhook/validate-discount",
+              "host": ["{{n8n_base_url}}"],
+              "path": ["webhook", "validate-discount"]
+            }
+          }
+        },
+        {
+          "name": "Validate Expired Discount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_id\": \"{{$randomUUID}}\",\n  \"discount_code\": \"EXPIRED\",\n  \"gross_amount\": 100.00,\n  \"commission_amount\": 13.50,\n  \"net_to_seller\": 71.50\n}"
+            },
+            "url": {
+              "raw": "{{n8n_base_url}}/webhook/validate-discount",
+              "host": ["{{n8n_base_url}}"],
+              "path": ["webhook", "validate-discount"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Supabase Direct Queries",
+      "item": [
+        {
+          "name": "Get All Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/transactions?limit=10&order=created_at.desc",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Transactions with Leakage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/transactions?has_leakage=eq.true&order=leakage_amount.desc",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "transactions"],
+              "query": [
+                {
+                  "key": "has_leakage",
+                  "value": "eq.true"
+                },
+                {
+                  "key": "order",
+                  "value": "leakage_amount.desc"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get All Leakage Findings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/leakage_findings?order=created_at.desc&limit=20",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "leakage_findings"],
+              "query": [
+                {
+                  "key": "order",
+                  "value": "created_at.desc"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Critical/High Findings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/leakage_findings?severity=in.(critical,high)&status=eq.detected&order=leakage_amount.desc",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "leakage_findings"],
+              "query": [
+                {
+                  "key": "severity",
+                  "value": "in.(critical,high)"
+                },
+                {
+                  "key": "status",
+                  "value": "eq.detected"
+                },
+                {
+                  "key": "order",
+                  "value": "leakage_amount.desc"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Pricing Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/pricing_rules?is_active=eq.true",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "pricing_rules"],
+              "query": [
+                {
+                  "key": "is_active",
+                  "value": "eq.true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Daily Summaries (Last 7 Days)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/daily_leakage_summary?order=report_date.desc&limit=7",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "daily_leakage_summary"],
+              "query": [
+                {
+                  "key": "order",
+                  "value": "report_date.desc"
+                },
+                {
+                  "key": "limit",
+                  "value": "7"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Insert Test Transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"test_{{$randomUUID}}\",\n  \"seller_id\": \"seller_test\",\n  \"buyer_id\": \"buyer_test\",\n  \"category\": \"photography\",\n  \"product_type\": \"service\",\n  \"gross_amount\": 100.00,\n  \"commission_amount\": 15.00,\n  \"commission_rate\": 15.0,\n  \"net_to_seller\": 85.00,\n  \"has_leakage\": false,\n  \"leakage_amount\": 0.00\n}"
+            },
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/transactions",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Delete Test Transactions",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/transactions?id=like.test_*",
+              "host": ["{{supabase_url}}"],
+              "path": ["rest", "v1", "transactions"],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "like.test_*"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
